@@ -1,9 +1,13 @@
+import time
+import logging
 import pandas as pd
 import yfinance as yf
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from constants import STOCKS
+
+logger = logging.getLogger(__name__)
 
 # data/ lives two levels above backend/services/
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
@@ -41,19 +45,56 @@ class DataService:
             parts.append(s)
         return pd.concat(parts).reset_index(drop=True)
 
-    def fetch_latest(self) -> bool:
-        end = datetime.today()
-        start = end - timedelta(days=5 * 365)
-        dfs = []
-        for symbol in STOCKS:
-            ticker = yf.Ticker(symbol)
-            df = ticker.history(start=start, end=end).reset_index()
+    def _fetch_one(self, symbol: str) -> Optional[pd.DataFrame]:
+        """Fetch 5y daily data for a single symbol using yf.download (mirrors eda.ipynb)."""
+        try:
+            logger.info(f"Fetching {symbol}...")
+            df = yf.download(symbol, period="5y", interval="1d", auto_adjust=True, progress=False)
+
+            if df.empty:
+                logger.warning(f"No data returned for {symbol}")
+                return None
+
+            # yfinance >= 0.2.x returns MultiIndex columns when downloading one ticker
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            df.reset_index(inplace=True)
+
+            # Intraday intervals use "Datetime" instead of "Date"
+            if "Datetime" in df.columns:
+                df.rename(columns={"Datetime": "Date"}, inplace=True)
+
             df["Symbol"] = symbol
             df = df[["Date", "Open", "High", "Low", "Close", "Volume", "Symbol"]]
             df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
-            dfs.append(df)
 
-        raw = pd.concat(dfs).reset_index(drop=True)
+            logger.info(f"{symbol} → {len(df)} rows fetched")
+            return df
+
+        except Exception as e:
+            logger.error(f"Error fetching {symbol}: {e}")
+            return None
+
+    def fetch_latest(self) -> bool:
+        dfs = []
+        for symbol in STOCKS:
+            df = self._fetch_one(symbol)
+            if df is not None:
+                dfs.append(df)
+            time.sleep(1)  # avoid rate-limiting (matches eda.ipynb)
+
+        if not dfs:
+            logger.error(
+                "fetch_latest: could not retrieve data for any symbol. "
+                "Yahoo Finance may be unreachable. Keeping existing data."
+            )
+            return False
+
+        raw = pd.concat(dfs, ignore_index=True)
+        raw.sort_values(["Symbol", "Date"], inplace=True)
+        raw.drop_duplicates(subset=["Symbol", "Date"], inplace=True)
+        raw.reset_index(drop=True, inplace=True)
         raw.to_csv(DATA_DIR / "stocks_data.csv", index=False)
 
         self.stocks_data = raw

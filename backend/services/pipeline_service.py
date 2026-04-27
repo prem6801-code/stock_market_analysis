@@ -24,7 +24,16 @@ class PipelineService:
         logger.info("Pipeline: starting...")
         self.status["status"] = "running"
         try:
-            self.data_service.fetch_latest()
+            fetched = self.data_service.fetch_latest()
+            if not fetched:
+                self.status = {
+                    "last_run": datetime.now().isoformat(),
+                    "status": "warning",
+                    "message": "Yahoo Finance unreachable — serving existing data",
+                    "next_run": self._next_run_time(),
+                }
+                logger.warning("Pipeline: fetch skipped, existing data retained")
+                return
             self.model_service.update_predictions()
             self.status = {
                 "last_run": datetime.now().isoformat(),
