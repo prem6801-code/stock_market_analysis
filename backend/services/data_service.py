@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from constants import STOCKS
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class DataService:
         self.processed_data: pd.DataFrame = pd.DataFrame()
         self.last_updated: Optional[datetime] = None
         self._load_from_disk()
+        # self._session = self._build_session()
 
     def _load_from_disk(self):
         raw_path = DATA_DIR / "stocks_data.csv"
@@ -32,6 +34,8 @@ class DataService:
         self.last_updated = datetime.now()
 
     def _compute_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
         parts = []
         for symbol in df["Symbol"].unique():
             s = df[df["Symbol"] == symbol].copy().sort_values("Date")
@@ -46,11 +50,18 @@ class DataService:
         return pd.concat(parts).reset_index(drop=True)
 
     def _fetch_one(self, symbol: str) -> Optional[pd.DataFrame]:
+        # session = requests.Session()
+        # session.headers.update({
+        #     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        #     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        #     "Accept-Language": "en-US,en;q=0.5",
+        # })
+
         """Fetch 5y daily data for a single symbol using yf.download (mirrors eda.ipynb)."""
         try:
             logger.info(f"Fetching {symbol}...")
-            df = yf.download(symbol, period="5y", interval="1d", auto_adjust=True, progress=False)
-
+            df = yf.download(symbol, period="5y", interval="1d", auto_adjust=True)
+            # df = yf.Ticker(symbol).history(period="5y",interval="1d",auto_adjust=True)
             if df.empty:
                 logger.warning(f"No data returned for {symbol}")
                 return None
@@ -82,7 +93,7 @@ class DataService:
             df = self._fetch_one(symbol)
             if df is not None:
                 dfs.append(df)
-            time.sleep(1)  # avoid rate-limiting (matches eda.ipynb)
+            time.sleep(3)  # avoid rate-limiting (matches eda.ipynb)
 
         if not dfs:
             logger.error(
@@ -165,4 +176,5 @@ class DataService:
                     "min_price": round(float(df["Close"].min()), 2),
                 }
             )
+        print(result)
         return result
