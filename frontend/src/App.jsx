@@ -21,27 +21,22 @@ export default function App() {
   const [history, setHistory] = useState([])
   const [predictions, setPredictions] = useState([])
   const [performance, setPerformance] = useState([])
-  const [pipelineStatus, setPipelineStatus] = useState(null)
   const [globalLoading, setGlobalLoading] = useState(true)
   const [chartLoading, setChartLoading] = useState(false)
 
-  // Load global data once on mount
   useEffect(() => {
     Promise.all([
       api.get('/api/predictions/all'),
       api.get('/api/analytics/performance'),
-      api.get('/api/pipeline/status'),
     ])
-      .then(([predsRes, perfRes, pipeRes]) => {
+      .then(([predsRes, perfRes]) => {
         setPredictions(predsRes.data.predictions)
         setPerformance(perfRes.data.data)
-        setPipelineStatus(pipeRes.data)
       })
       .catch(console.error)
       .finally(() => setGlobalLoading(false))
   }, [])
 
-  // Reload chart data when stock or date range changes
   useEffect(() => {
     setChartLoading(true)
     api.get(`/api/stocks/${selectedStock}/history?days=${historyDays}`)
@@ -65,11 +60,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-950">
-      <Navbar pipelineStatus={pipelineStatus} setPipelineStatus={setPipelineStatus} />
+      <Navbar />
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Portfolio Overview — shown first */}
+        {/* Portfolio Overview */}
         <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
           <h2 className="text-base font-semibold text-white mb-1">Portfolio Overview</h2>
           <p className="text-xs text-gray-500 mb-5">5-year performance summary across all stocks</p>
